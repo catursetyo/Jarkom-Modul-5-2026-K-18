@@ -108,7 +108,7 @@ Jalur: Dummy-Plug, Switch-Lab, Ritsuko, Asuka, Gendou, Shigeru, Switch-Monolith,
    - `sysctl -w net.ipv4.ip_forward=1` dan penyimpanannya di `/etc/sysctl.conf`.
 3. **Gendou** memakai `udhcpc` bawaan GNS3 (`/gns3/bin/busybox`) dengan handler `/root/udhcpc.script`, agar IP, default route, dan DNS dari NAT1 otomatis terpasang. Handler diperlukan karena `udhcpc` GNS3 tidak membawa script default.
 4. Script dijalankan di `/root` tiap router (`bash init.sh`).
-5. Pembuktian memakai [`scripts/soal2_cek.sh`](scripts/soal2_cek.sh), yang menampilkan `ip -br a` lalu ping dua ujung tiap link milik router itu.
+5. Pembuktian dilakukan manual di tiap router: `ip -br a`, lalu `ping` ke IP kedua ujung tiap link router ke router.
 
 ### Pembagian IP per interface router
 Router yang dekat ke Gendou memakai IP pertama tiap link, dan gateway LAN memakai IP usable pertama subnet. Isi lengkap ada di [`routings/`](routings).
@@ -137,7 +137,7 @@ Router lainnya mengikuti pola yang sama dan tertulis di `routings/<router>.conf`
 
 **C. Ping dua ujung tiap link router ke router**
 ![ping link](assets/misi_soal2_ping_link.png)
-<!-- TODO: screenshot hasil soal2_cek.sh tiap router (16 link) -->
+<!-- TODO: screenshot ping dua ujung tiap link (16 link) -->
 
 ---
 
@@ -193,6 +193,37 @@ Script routing ada di bagian `# Soal 3` tiap `scripts/<router>.sh`, dan baris `u
 **B. Armisael ping ke Lilith, Sachiel, dan Comm-Net**
 ![Ping Armisael](assets/misi_soal3_ping_armisael.png)
 <!-- TODO: screenshot ping Armisael ke 192.220.4.74, 192.220.3.130, 192.220.2.2 -->
+
+---
+
+## Soal 4: Haus kabar dari dunia luar (NAT dan DNS)
+
+**Deskripsi soal:** seluruh jaringan mendapat akses internet lewat Gendou. Konfigurasi tidak boleh perlu diubah saat IP NAT1 berganti, hanya traffic dari prefix internal yang keluar lewat NAT1 yang diterjemahkan alamatnya, dan traffic antar-LAN tetap membawa alamat asli pengirim. Node juga harus bisa me-resolve nama domain. Bukti: ping `8.8.8.8` dan `deb.debian.org` dari Armisael dan Lilith, dan counter rule NAT.
+
+### Langkah pengerjaan
+1. **NAT di Gendou** memakai `MASQUERADE`, bukan `SNAT --to-source`, karena `MASQUERADE` otomatis memakai IP interface keluar (`eth0`), sehingga tidak perlu diubah saat IP dari DHCP NAT1 berganti:
+   ```bash
+   iptables -t nat -A POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE
+   ```
+   - `-s 192.220.0.0/16` membatasi hanya prefix internal yang diterjemahkan.
+   - `-o eth0` membatasi hanya traffic yang keluar lewat NAT1. Traffic antar-LAN tidak keluar lewat `eth0`, jadi tidak diterjemahkan dan tetap membawa alamat asli.
+2. **DNS** di semua node memakai `nameserver 8.8.8.8` (Seele) di `/etc/resolv.conf`, agar `apt` dan `ping nama-domain` bisa jalan. Gendou memakai DNS dari DHCP NAT1 (dengan cadangan `8.8.8.8`).
+3. Rule disimpan di bagian `# Soal 4` pada `scripts/gendou.sh`, dan baris DNS ditambahkan ke script router lain serta node uji. Karena ini penambahan fitur, tidak dibuat script terpisah.
+4. Setelah script dijalankan, ping dari Armisael dan Lilith, lalu tampilkan counter:
+   ```bash
+   iptables -t nat -L POSTROUTING -n -v
+   ```
+
+### Bukti
+**A. Rule NAT dan counter di Gendou**
+![iptables NAT Gendou](assets/misi_soal4_iptables_gendou.png)
+<!-- TODO: screenshot iptables -t nat -L POSTROUTING -n -v setelah ping -->
+
+**B. Armisael ping 8.8.8.8 dan deb.debian.org**
+![Ping Armisael](assets/misi_soal4_ping_armisael.png)
+
+**C. Lilith ping 8.8.8.8 dan deb.debian.org**
+![Ping Lilith](assets/misi_soal4_ping_lilith.png)
 
 ---
 

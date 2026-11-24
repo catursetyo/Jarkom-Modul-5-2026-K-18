@@ -38,6 +38,9 @@ ip addr add 192.220.4.149/30 dev eth2
 ip route replace default via 192.220.4.113   # ke atas: Gendou
 ip route replace 192.220.3.224/27 via 192.220.4.150   # cabang Kaworu
 
+# Soal 4 - DNS agar node bisa me-resolve nama domain (Seele 8.8.8.8)
+echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+
 # Soal 2 - ip forwarding
 sysctl -w net.ipv4.ip_forward=1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf

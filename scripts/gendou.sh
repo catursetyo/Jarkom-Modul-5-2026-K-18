@@ -146,9 +146,16 @@ ip route replace 192.220.4.72/29 via 192.220.4.134   # cabang Fuyutsuki
 ip route replace 192.220.4.164/30 via 192.220.4.134   # cabang Fuyutsuki
 ip route replace 192.220.4.168/30 via 192.220.4.134   # cabang Fuyutsuki
 
+# Soal 4 - NAT internet (MASQUERADE: tidak bergantung IP NAT1 yang bisa berganti)
+command -v iptables >/dev/null || { apt update && apt install iptables -y; }
+iptables -t nat -C POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE
+grep -q '^nameserver' /etc/resolv.conf || echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+
 # Soal 2 - ip forwarding
 sysctl -w net.ipv4.ip_forward=1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
 ip -br a
 ip route
+iptables -t nat -L POSTROUTING -n -v
