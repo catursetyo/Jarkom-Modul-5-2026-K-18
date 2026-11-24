@@ -343,6 +343,69 @@ Script routing ada di bagian `# Soal 3` tiap `scripts/<router>.sh`, dan baris `u
 
 ---
 
+## Soal 8: Mengenali kondisi normal (Layanan Pen-Pen dan Tokyo3-Core)
+
+**Deskripsi soal:** mengaktifkan layanan listener di `Pen-Pen` (port 80) dan `Tokyo3-Core` (port 80 dan 8080) sebagai kondisi normal sebelum dilindungi firewall. Port 80 membalas `Welcome to {hostname}`, sedangkan port 8080 di `Tokyo3-Core` membalas `syifa imutz`. Bukti: `nc` dari `Lilith` ke ketiga port tersebut, serta pembuktian bahwa port yang tidak dilayani (misalnya port `22`) langsung gagal (TCP RST) dan bukan menggantung (timeout).
+
+### Daftar layanan
+| Node | IP | Port TCP | Balasan | Script |
+|---|---|---|---|---|
+| **Pen-Pen** | `192.220.3.194` | `80` | `Welcome to Pen-Pen` | [`scripts/pen-pen.sh`](scripts/pen-pen.sh) |
+| **Tokyo3-Core** | `192.220.4.106` | `80` | `Welcome to Tokyo3-Core` | [`scripts/tokyo3-core.sh`](scripts/tokyo3-core.sh) |
+| **Tokyo3-Core** | `192.220.4.106` | `8080` | `syifa imutz` | [`scripts/tokyo3-core.sh`](scripts/tokyo3-core.sh) |
+
+### Langkah pengerjaan
+1. Menjalankan `/root/pen-pen.sh` di `Pen-Pen` dan `/root/tokyo3-core.sh` di `Tokyo3-Core` untuk memasang `iptables` dan `netcat-traditional`, lalu menyalakan listener background dengan `nc.traditional -nlvp <port> -q 0` yang langsung mengirimkan balasan dan menutup koneksi dengan bersih.
+2. Dari `Lilith` (`192.220.4.74`), menguji koneksi `nc` ke ketiga port aktif (`Pen-Pen:80`, `Tokyo3-Core:80`, `Tokyo3-Core:8080`).
+3. Menguji port yang tidak dilayani (`22`) dengan `time nc -w 3 <ip> 22; echo "exit=$?"` di `Lilith`. Karena belum ada aturan `DROP`, kernel target langsung membalas TCP RST sehingga koneksi gagal seketika (`exit=1`, durasi < 0.1 detik), bukan menggantung sampai timeout 3 detik.
+
+### Bukti
+**A. Uji `nc` dari Lilith ke Pen-Pen:80, Tokyo3-Core:80, Tokyo3-Core:8080, dan port 22 (langsung gagal)**
+![Uji nc Lilith kondisi normal](assets/misi_soal8_lilith_nc.png)
+<!-- TODO: screenshot nc dari Lilith ke 192.220.3.194:80, 192.220.4.106:80, 192.220.4.106:8080, serta time nc port 22 -->
+
+---
+
+# Babak 2: Sabotase dan Hantu MAGI
+
+## Soal 9: Jalur belakang diutak-atik (Sabotase Routing di Shigeru)
+
+**Deskripsi soal:** menjalankan script sabotase `break_routing.sh` di **Shigeru**, mendiagnosis semua penyebab kenapa `Lilith` tidak mendapat jawaban dari `Armisael` padahal `Armisael` masih bisa ping gateway-nya (`192.220.4.81`), menjelaskan penyebab gejala tersebut, memperbaiki seluruh kerusakan, lalu membuktikan `Lilith` kembali bisa ping `Armisael`.
+
+### Hasil diagnosa di Shigeru (4 penyebab)
+Setelah `break_routing.sh` dijalankan di Shigeru, pemeriksaan lewat `cat /proc/sys/net/ipv4/ip_forward`, `ip route`, `ip rule show`, dan `ip route show table 100` menemukan **4 penyebab sekaligus**:
+
+| No | Penyebab | Hasil diagnosa | Perintah perbaikan |
+|---|---|---|---|
+| 1 | **IP forwarding dimatikan** | `cat /proc/sys/net/ipv4/ip_forward` bernilai `0` | `sysctl -w net.ipv4.ip_forward=1` |
+| 2 | **Default route dibelokkan ke Makoto (`eth2`)** | `default via 192.220.4.162 dev eth2` (seharusnya via Gendou `192.220.4.129 dev eth0`) | `ip route replace default via 192.220.4.129 dev eth0` |
+| 3 | **Rute `blackhole` ke subnet Switch-Dogma** | `blackhole 192.220.4.72/29` di tabel routing `main` | `ip route del blackhole 192.220.4.72/29` |
+| 4 | **Policy-Based Routing (PBR) menjebak `eth1` ke `table 100`** | `90: from all iif eth1 lookup 100` dengan isi `table 100`: `unreachable default` | `ip rule del iif eth1 lookup 100 priority 90` dan `ip route flush table 100` |
+
+### Penjelasan kenapa gejalanya begitu
+1. **Kenapa Armisael masih bisa ping gateway-nya sendiri (`192.220.4.81`)?**
+   - `ip_forward = 0` hanya memblokir paket yang diteruskan (*forwarding*) antar-interface, bukan paket yang ditujukan ke IP lokal Shigeru sendiri (`INPUT`).
+   - Pada `ip rule`, aturan bawaan `0: from all lookup local` memiliki prioritas `0` (lebih tinggi dari aturan sabotase `priority 90`), sehingga paket menuju `192.220.4.81` langsung diproses oleh tabel `local` sebelum sempat masuk ke `table 100`.
+2. **Kenapa Lilith (`192.220.4.74`) tidak mendapat jawaban dari Armisael (`192.220.4.83`)?**
+   - Paket ICMP Echo Request dari Lilith berhenti di Shigeru karena `ip_forward = 0`.
+   - Kalaupun forwarding aktif, balasan dari Armisael yang masuk lewat `eth1` langsung terkena `ip rule priority 90 (iif eth1 lookup 100)` yang mengarah ke `unreachable default` di `table 100`, sehingga gagal sebelum membaca tabel `main`.
+   - Kalaupun PBR dihapus, balasan menuju `192.220.4.74` (subnet `192.220.4.72/29`) tetap dibuang diam-diam (*silent drop*) oleh rute `blackhole 192.220.4.72/29` karena `/29` menang *longest-prefix match* dibanding `default`.
+   - Kalaupun `blackhole` dihapus, `default route` yang mengarah ke Makoto (`192.220.4.162`) menimbulkan *routing loop* Shigeru ↔ Makoto sampai TTL habis, karena Makoto juga memiliki default route balik ke Shigeru.
+
+### Perbaikan
+Perbaikan ditulis pada script terpisah [`scripts/shigeru_soal9_fix.sh`](scripts/shigeru_soal9_fix.sh) (tidak mengubah `scripts/shigeru.sh` karena bersifat mengganti/memulihkan konfigurasi). Keempat kerusakan dibersihkan sekaligus, lalu Shigeru diuji kembali dengan ping dari `Lilith` ke `Armisael` (`192.220.4.83`).
+
+### Bukti
+**A. Diagnosa kerusakan di Shigeru (sebelum perbaikan)**
+![Diagnosa Shigeru](assets/misi_soal9_diagnosa_shigeru.png)
+<!-- TODO: screenshot hasil ip_forward, ip route, ip rule, ip route show table 100 di Shigeru + ping gagal dari Lilith & ping gateway berhasil dari Armisael -->
+
+**B. Hasil perbaikan di Shigeru dan ping Lilith ke Armisael kembali berhasil**
+![Perbaikan dan ping Lilith ke Armisael](assets/misi_soal9_fix_dan_ping.png)
+<!-- TODO: screenshot hasil shigeru_soal9_fix.sh di Shigeru dan ping -c 3 192.220.4.83 dari Lilith -->
+
+---
+
 ## Struktur repo
 | Path | Isi |
 |---|---|
