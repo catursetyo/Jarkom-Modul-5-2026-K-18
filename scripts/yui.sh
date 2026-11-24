@@ -1,5 +1,5 @@
 #!/bin/bash
-# Soal 2 - Yui: IP interface + IP forwarding (tanpa apt, internet belum ada)
+# Soal 2-4 - Yui: IP interface, routing statis, DNS, dan IP forwarding
 
 cat <<'EOF' > /etc/network/interfaces
 auto eth0

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Soal 2 - Kensuke: IP interface + IP forwarding (tanpa apt, internet belum ada)
+# Soal 2-4 - Kensuke: IP interface, routing statis, DNS, dan IP forwarding
 
 cat <<'EOF' > /etc/network/interfaces
 auto eth0

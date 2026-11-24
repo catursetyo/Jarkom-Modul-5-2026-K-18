@@ -1,5 +1,5 @@
 #!/bin/bash
-# Soal 2 - Gendou: IP interface + IP forwarding (tanpa apt, internet belum ada)
+# Soal 2-5 - Gendou: IP interface, routing statis, NAT internet, dan firewall
 
 cat <<'EOF' > /etc/network/interfaces
 auto eth0
@@ -152,6 +152,30 @@ iptables -t nat -C POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE 2>/dev/nu
   iptables -t nat -A POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE
 grep -q '^nameserver' /etc/resolv.conf || echo 'nameserver 8.8.8.8' > /etc/resolv.conf
 
+# Soal 5 - Firewall di Gendou (boleh keluar, tidak boleh dimasuki dari NAT1)
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -F INPUT
+iptables -F FORWARD
+iptables -F OUTPUT
+
+# INPUT: loopback, balasan koneksi, DHCP dari NAT1, dan internal ke Gendou
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -i eth0 -p udp --sport 67 --dport 68 -j ACCEPT
+iptables -A INPUT ! -i eth0 -s 192.220.0.0/16 -j ACCEPT
+
+# FORWARD: balasan koneksi, internal ke internet, dan antar-LAN
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD ! -i eth0 -o eth0 -s 192.220.0.0/16 -j ACCEPT
+iptables -A FORWARD ! -i eth0 ! -o eth0 -s 192.220.0.0/16 -d 192.220.0.0/16 -j ACCEPT
+
+# Policy default INPUT & FORWARD = DROP
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
 # Soal 2 - ip forwarding
 sysctl -w net.ipv4.ip_forward=1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
@@ -159,3 +183,4 @@ grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.
 ip -br a
 ip route
 iptables -t nat -L POSTROUTING -n -v
+iptables -S

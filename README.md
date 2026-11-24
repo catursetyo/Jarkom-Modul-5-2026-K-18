@@ -227,6 +227,41 @@ Script routing ada di bagian `# Soal 3` tiap `scripts/<router>.sh`, dan baris `u
 
 ---
 
+## Soal 5: Pintu depan dikunci rapat (Firewall di Gendou)
+
+**Deskripsi soal:** mengunci sisi NAT1 di Gendou agar traffic boleh keluar namun koneksi baru dari luar tidak boleh masuk. Policy `INPUT` dan `FORWARD` diubah menjadi `DROP`, lalu diizinkan: (a) balasan koneksi yang sudah ada, (b) traffic dari jaringan internal ke internet, (c) traffic antar-LAN, (d) traffic dari jaringan internal ke Gendou sendiri, serta **Loopback** dan **DHCP dari NAT1**. Konfigurasi soal 2 sampai 5 digabung dalam satu script `gendo.sh` (di repo: `scripts/gendou.sh`). Bukti: `iptables -S` di Gendou dan ping `8.8.8.8` dari Armisael masih berhasil.
+
+### Langkah pengerjaan
+1. **Reset chain filter sementara** (`INPUT`, `FORWARD`, `OUTPUT` di-flush dengan policy `ACCEPT` sementara) agar script idempotent dan tidak menimbulkan duplikasi rule saat dijalankan ulang.
+2. **Aturan chain `INPUT`** (traffic menuju Gendou sendiri):
+   - `iptables -A INPUT -i lo -j ACCEPT` → mengizinkan **loopback**.
+   - `iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT` → **(a)** mengizinkan balasan koneksi yang sudah ada (misal balasan DNS/`apt`/ping dari luar).
+   - `iptables -A INPUT -i eth0 -p udp --sport 67 --dport 68 -j ACCEPT` → mengizinkan balasan **DHCP dari NAT1** di `eth0`.
+   - `iptables -A INPUT ! -i eth0 -s 192.220.0.0/16 -j ACCEPT` → **(d)** mengizinkan traffic dari jaringan internal ke Gendou, sekaligus mencegah spoofing prefix internal dari sisi NAT1 (`! -i eth0`).
+3. **Aturan chain `FORWARD`** (traffic yang melewati Gendou):
+   - `iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT` → **(a)** mengizinkan balasan koneksi yang sudah ada dari internet maupun antar-LAN.
+   - `iptables -A FORWARD ! -i eth0 -o eth0 -s 192.220.0.0/16 -j ACCEPT` → **(b)** mengizinkan traffic dari jaringan internal ke internet lewat NAT1 (`eth0`).
+   - `iptables -A FORWARD ! -i eth0 ! -o eth0 -s 192.220.0.0/16 -d 192.220.0.0/16 -j ACCEPT` → **(c)** mengizinkan traffic antar-LAN internal.
+4. **Kunci policy default:**
+   ```bash
+   iptables -P INPUT DROP
+   iptables -P FORWARD DROP
+   iptables -P OUTPUT ACCEPT
+   ```
+   Semua koneksi baru yang masuk dari sisi NAT1 (`eth0`) tidak cocok dengan rule mana pun sehingga otomatis di-`DROP`.
+5. Karena merupakan penambahan fitur dan diminta soal berada dalam satu script bersama soal 2–4, aturan ditambahkan ke bagian `# Soal 5` pada [`scripts/gendou.sh`](scripts/gendou.sh) dan dijalankan di `/root/gendo.sh` pada node Gendou.
+
+### Bukti
+**A. Daftar rule firewall (`iptables -S`) di Gendou**
+![iptables -S Gendou](assets/misi_soal5_iptables_gendou.png)
+<!-- TODO: screenshot iptables -S di Gendou -->
+
+**B. Armisael masih bisa ping `8.8.8.8`**
+![Ping 8.8.8.8 Armisael](assets/misi_soal5_ping_armisael.png)
+<!-- TODO: screenshot ping -c 3 8.8.8.8 dari Armisael setelah firewall aktif -->
+
+---
+
 ## Struktur repo
 | Path | Isi |
 |---|---|
