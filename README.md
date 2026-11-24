@@ -308,6 +308,41 @@ Script routing ada di bagian `# Soal 3` tiap `scripts/<router>.sh`, dan baris `u
 
 ---
 
+## Soal 7: Membangunkan MAGI (Instalasi & Listener `nc`)
+
+**Deskripsi soal:** mengaktifkan ketiga node MAGI (`Magi-Casper`, `Magi-Balthasar`, `Magi-Melchior`) di Switch-Terminal dengan memasang `iptables` dan `netcat-traditional` lewat `/root/<nama>.sh`, lalu menyalakan listener TCP sesuai glosarium. Dari `Lilith`, kirim pesan ke ketiganya (port 5000) dan ke port `5001` milik Balthasar, lalu tampilkan pesan yang diterima di tiap node.
+
+### Daftar layanan MAGI
+| Node | IP | Port TCP | Script | Log penerima |
+|---|---|---|---|---|
+| **Magi-Casper** | `192.220.4.58` | `5000` | [`scripts/magi-casper.sh`](scripts/magi-casper.sh) | `/root/nc_5000.log` |
+| **Magi-Balthasar** | `192.220.4.59` | `5000`, `5001` | [`scripts/magi-balthasar.sh`](scripts/magi-balthasar.sh) | `/root/nc_5000.log`, `/root/nc_5001.log` |
+| **Magi-Melchior** | `192.220.4.60` | `5000` | [`scripts/magi-melchior.sh`](scripts/magi-melchior.sh) | `/root/nc_5000.log` |
+
+### Langkah pengerjaan
+1. Di masing-masing node MAGI, menjalankan script `/root/<nama>.sh` (`magi-casper.sh`, `magi-balthasar.sh`, `magi-melchior.sh`) yang:
+   - memasang paket `iptables` dan `netcat-traditional`,
+   - menjalankan listener `nc.traditional -nlvp <port>` dalam loop background (`nohup`) agar terus siap menerima koneksi berulang,
+   - mencatat informasi koneksi dan pesan masuk ke `/root/nc_<port>.log` (flag `-n` dipakai agar tidak tertunda reverse DNS lookup).
+2. Dari `Lilith` (`192.220.4.74`), mengirim pesan uji ke keempat endpoint (`5000` di Casper, Balthasar, Melchior, serta `5001` di Balthasar).
+3. Menampilkan isi `/root/nc_5000.log` di ketiga node dan `/root/nc_5001.log` di Balthasar sebagai bukti pesan diterima.
+
+### Bukti
+**A. Pengiriman pesan dari Lilith**
+![Kirim pesan Lilith ke MAGI](assets/misi_soal7_lilith_send.png)
+<!-- TODO: screenshot pengiriman nc dari Lilith ke Casper, Balthasar (5000 & 5001), dan Melchior -->
+
+**B. Pesan diterima di Magi-Casper (port 5000)**
+![Log Magi-Casper](assets/misi_soal7_casper.png)
+
+**C. Pesan diterima di Magi-Balthasar (port 5000 dan 5001)**
+![Log Magi-Balthasar](assets/misi_soal7_balthasar.png)
+
+**D. Pesan diterima di Magi-Melchior (port 5000)**
+![Log Magi-Melchior](assets/misi_soal7_melchior.png)
+
+---
+
 ## Struktur repo
 | Path | Isi |
 |---|---|
