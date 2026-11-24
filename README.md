@@ -262,11 +262,58 @@ Script routing ada di bagian `# Soal 3` tiap `scripts/<router>.sh`, dan baris `u
 
 ---
 
+## Soal 6: Alamat para pilot (IP statis permanen semua node non-router)
+
+**Deskripsi soal:** memberi IP statis dan gateway ke semua 25 node non-router sesuai aturan glosarium (gateway adalah IP usable pertama, node pada switch diberi IP usable berikutnya sesuai urutan), lalu menyimpannya agar bertahan setelah restart. Bukti: `ip -br` dan ping ke gateway di `Unit-01`.
+
+### Langkah pengerjaan
+1. Menyusun konfigurasi `/etc/network/interfaces` permanen untuk seluruh 25 node non-router di folder [`routings/`](routings) menggunakan generator [`soal6/gen_soal6.py`](soal6/gen_soal6.py).
+2. Tiap file `routings/<node>.conf` berisi konfigurasi statis `eth0` (`address`, `netmask`, `gateway`) serta `up echo nameserver 8.8.8.8 > /etc/resolv.conf` agar DNS juga otomatis terpasang saat node hidup kembali.
+3. Agar konfigurasi **bertahan setelah restart** di GNS3, konfigurasi dipasang melalui **Edit config** (Network configuration) pada masing-masing node non-router di GNS3 — bukan hanya lewat perintah `ip addr` sementara di console — lalu node di-Stop dan Start ulang.
+4. Menguji persistensi dengan me-restart `Unit-01`, lalu memeriksa `ip -br a` dan melakukan ping ke gateway Misato (`192.220.4.65`).
+
+### Tabel IP statis 25 node non-router
+| No | Node | Switch | Router | IP/Prefix | Netmask | Gateway | File config |
+|---|---|---|---|---|---|---|---|
+| 1 | Quarters | Switch-Quarters | Rei | `192.220.0.2/23` | `255.255.254.0` | `192.220.0.1` | `routings/quarters.conf` |
+| 2 | Comm-Net | Switch-Comm | Hikari | `192.220.2.2/24` | `255.255.255.0` | `192.220.2.1` | `routings/comm-net.conf` |
+| 3 | Hangar-Crew | Switch-Hangar | Yui | `192.220.3.2/25` | `255.255.255.128` | `192.220.3.1` | `routings/hangar-crew.conf` |
+| 4 | Sachiel | Switch-Bunker | Kensuke | `192.220.3.130/26` | `255.255.255.192` | `192.220.3.129` | `routings/sachiel.conf` |
+| 5 | Pen-Pen | Switch-Medic | Maya | `192.220.3.194/27` | `255.255.255.224` | `192.220.3.193` | `routings/pen-pen.conf` |
+| 6 | Medic-Bay | Switch-Medic | Maya | `192.220.3.195/27` | `255.255.255.224` | `192.220.3.193` | `routings/medic-bay.conf` |
+| 7 | Relay-Node | Switch-Relay | Kaworu | `192.220.3.226/27` | `255.255.255.224` | `192.220.3.225` | `routings/relay-node.conf` |
+| 8 | Garden-Staff | Switch-Garden | Shinji | `192.220.4.2/27` | `255.255.255.224` | `192.220.4.1` | `routings/garden-staff.conf` |
+| 9 | Dock-Crew | Switch-Dock | Mari | `192.220.4.34/28` | `255.255.255.240` | `192.220.4.33` | `routings/dock-crew.conf` |
+| 10 | Entry-Plug | Switch-Lab | Ritsuko | `192.220.4.50/29` | `255.255.255.248` | `192.220.4.49` | `routings/entry-plug.conf` |
+| 11 | Dummy-Plug | Switch-Lab | Ritsuko | `192.220.4.51/29` | `255.255.255.248` | `192.220.4.49` | `routings/dummy-plug.conf` |
+| 12 | Magi-Casper | Switch-Terminal | Fuyutsuki | `192.220.4.58/29` | `255.255.255.248` | `192.220.4.57` | `routings/magi-casper.conf` |
+| 13 | Magi-Balthasar | Switch-Terminal | Fuyutsuki | `192.220.4.59/29` | `255.255.255.248` | `192.220.4.57` | `routings/magi-balthasar.conf` |
+| 14 | Magi-Melchior | Switch-Terminal | Fuyutsuki | `192.220.4.60/29` | `255.255.255.248` | `192.220.4.57` | `routings/magi-melchior.conf` |
+| 15 | Unit-01 | Switch-Cage | Misato | `192.220.4.66/29` | `255.255.255.248` | `192.220.4.65` | `routings/unit-01.conf` |
+| 16 | Unit-02 | Switch-Cage | Misato | `192.220.4.67/29` | `255.255.255.248` | `192.220.4.65` | `routings/unit-02.conf` |
+| 17 | Unit-00 | Switch-Cage | Misato | `192.220.4.68/29` | `255.255.255.248` | `192.220.4.65` | `routings/unit-00.conf` |
+| 18 | Lilith | Switch-Dogma | Toji | `192.220.4.74/29` | `255.255.255.248` | `192.220.4.73` | `routings/lilith.conf` |
+| 19 | Adam | Switch-Dogma | Toji | `192.220.4.75/29` | `255.255.255.248` | `192.220.4.73` | `routings/adam.conf` |
+| 20 | Zeruel | Switch-Monolith | Shigeru | `192.220.4.82/29` | `255.255.255.248` | `192.220.4.81` | `routings/zeruel.conf` |
+| 21 | Armisael | Switch-Monolith | Shigeru | `192.220.4.83/29` | `255.255.255.248` | `192.220.4.81` | `routings/armisael.conf` |
+| 22 | Radar-Array | Switch-Radar | Makoto | `192.220.4.90/29` | `255.255.255.248` | `192.220.4.89` | `routings/radar-array.conf` |
+| 23 | Archive-Vault | Switch-Archive | Asuka | `192.220.4.98/30` | `255.255.255.252` | `192.220.4.97` | `routings/archive-vault.conf` |
+| 24 | Spy | Switch-Intel | Kaji | `192.220.4.102/30` | `255.255.255.252` | `192.220.4.101` | `routings/spy.conf` |
+| 25 | Tokyo3-Core | Switch-Cmd | Gendou | `192.220.4.106/30` | `255.255.255.252` | `192.220.4.105` | `routings/tokyo3-core.conf` |
+
+### Bukti
+**`ip -br` dan ping ke gateway (`192.220.4.65`) di `Unit-01` setelah restart**
+![ip -br dan ping gateway Unit-01](assets/misi_soal6_unit01.png)
+<!-- TODO: screenshot ip -br a dan ping -c 3 192.220.4.65 di Unit-01 setelah restart -->
+
+---
+
 ## Struktur repo
 | Path | Isi |
 |---|---|
 | `assets/` | Screenshot dan gambar laporan |
 | `scripts/` | Script konfigurasi tiap router dan node uji, dijalankan di `/root` |
-| `routings/` | Isi `/etc/network/interfaces` tiap router (alternatif Edit config GNS3) |
+| `routings/` | Isi `/etc/network/interfaces` permanen (Edit config GNS3) untuk 17 router dan 25 node non-router |
 | `soal1/` | Perhitungan VLSM (`vlsm.py`) dan tabelnya |
-| `soal2/` | Generator script (`gen_soal2.py`) |
+| `soal2/` | Generator script router & node uji (`gen_soal2.py`) |
+| `soal6/` | Generator config statis 25 node non-router (`gen_soal6.py`) dan tabel IP host |
