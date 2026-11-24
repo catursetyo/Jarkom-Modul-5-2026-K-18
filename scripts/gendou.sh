@@ -44,6 +44,29 @@ auto eth8
 iface eth8 inet static
     address 192.220.4.105
     netmask 255.255.255.252
+
+up ip route add 192.220.0.0/23 via 192.220.4.110
+up ip route add 192.220.3.0/25 via 192.220.4.110
+up ip route add 192.220.4.0/27 via 192.220.4.110
+up ip route add 192.220.4.32/28 via 192.220.4.110
+up ip route add 192.220.4.136/29 via 192.220.4.110
+up ip route add 192.220.4.144/30 via 192.220.4.110
+up ip route add 192.220.2.0/24 via 192.220.4.114
+up ip route add 192.220.3.224/27 via 192.220.4.114
+up ip route add 192.220.4.148/30 via 192.220.4.114
+up ip route add 192.220.3.128/26 via 192.220.4.118
+up ip route add 192.220.4.48/29 via 192.220.4.118
+up ip route add 192.220.4.96/30 via 192.220.4.118
+up ip route add 192.220.4.152/29 via 192.220.4.118
+up ip route add 192.220.4.100/30 via 192.220.4.122
+up ip route add 192.220.4.64/29 via 192.220.4.126
+up ip route add 192.220.4.80/28 via 192.220.4.130
+up ip route add 192.220.4.160/30 via 192.220.4.130
+up ip route add 192.220.3.192/27 via 192.220.4.134
+up ip route add 192.220.4.56/29 via 192.220.4.134
+up ip route add 192.220.4.72/29 via 192.220.4.134
+up ip route add 192.220.4.164/30 via 192.220.4.134
+up ip route add 192.220.4.168/30 via 192.220.4.134
 EOF
 
 # eth1 -> Yui
@@ -98,7 +121,34 @@ elif command -v udhcpc >/dev/null; then udhcpc -i eth0 -n -q -s /root/udhcpc.scr
 elif [ -x /gns3/bin/busybox ]; then /gns3/bin/busybox udhcpc -i eth0 -n -q -s /root/udhcpc.script
 else ifup eth0; fi
 
+# Soal 3 - routing statis
+# default route ke NAT1 sudah diset oleh DHCP (udhcpc.script)
+ip route replace 192.220.0.0/23 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.3.0/25 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.4.0/27 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.4.32/28 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.4.136/29 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.4.144/30 via 192.220.4.110   # cabang Yui
+ip route replace 192.220.2.0/24 via 192.220.4.114   # cabang Hikari
+ip route replace 192.220.3.224/27 via 192.220.4.114   # cabang Hikari
+ip route replace 192.220.4.148/30 via 192.220.4.114   # cabang Hikari
+ip route replace 192.220.3.128/26 via 192.220.4.118   # cabang Asuka
+ip route replace 192.220.4.48/29 via 192.220.4.118   # cabang Asuka
+ip route replace 192.220.4.96/30 via 192.220.4.118   # cabang Asuka
+ip route replace 192.220.4.152/29 via 192.220.4.118   # cabang Asuka
+ip route replace 192.220.4.100/30 via 192.220.4.122   # cabang Kaji
+ip route replace 192.220.4.64/29 via 192.220.4.126   # cabang Misato
+ip route replace 192.220.4.80/28 via 192.220.4.130   # cabang Shigeru
+ip route replace 192.220.4.160/30 via 192.220.4.130   # cabang Shigeru
+ip route replace 192.220.3.192/27 via 192.220.4.134   # cabang Fuyutsuki
+ip route replace 192.220.4.56/29 via 192.220.4.134   # cabang Fuyutsuki
+ip route replace 192.220.4.72/29 via 192.220.4.134   # cabang Fuyutsuki
+ip route replace 192.220.4.164/30 via 192.220.4.134   # cabang Fuyutsuki
+ip route replace 192.220.4.168/30 via 192.220.4.134   # cabang Fuyutsuki
+
+# Soal 2 - ip forwarding
 sysctl -w net.ipv4.ip_forward=1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
 ip -br a
+ip route

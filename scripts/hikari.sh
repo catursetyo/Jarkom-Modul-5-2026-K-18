@@ -16,6 +16,9 @@ auto eth2
 iface eth2 inet static
     address 192.220.4.149
     netmask 255.255.255.252
+
+up ip route add default via 192.220.4.113
+up ip route add 192.220.3.224/27 via 192.220.4.150
 EOF
 
 # eth0 -> Gendou
@@ -31,7 +34,13 @@ ip link set eth2 up
 ip addr flush dev eth2
 ip addr add 192.220.4.149/30 dev eth2
 
+# Soal 3 - routing statis
+ip route replace default via 192.220.4.113   # ke atas: Gendou
+ip route replace 192.220.3.224/27 via 192.220.4.150   # cabang Kaworu
+
+# Soal 2 - ip forwarding
 sysctl -w net.ipv4.ip_forward=1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf 2>/dev/null || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 
 ip -br a
+ip route
