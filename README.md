@@ -406,6 +406,126 @@ Perbaikan ditulis pada script terpisah [`scripts/shigeru_soal9_fix.sh`](scripts/
 
 ---
 
+## Soal 10: Para pilot terkunci di dalam (Sabotase NAT di Misato dan Gendou)
+
+**Deskripsi soal:** menjalankan script sabotase `break_nat.sh` di **Misato** dan **Gendou**, mendiagnosis semua penyebab kenapa `Unit-01`, `Unit-02`, dan `Unit-00` (Switch-Cage) tidak bisa ping `8.8.8.8` padahal `Spy` (Switch-Intel) normal dan ping Cage ke `Lilith` tetap berjalan. Lalu memperbaiki kerusakan, membuktikan `Unit-01` kembali bisa ping `8.8.8.8`, dan menyebutkan di router mana alamat sumber diterjemahkan.
+
+### Hasil diagnosa (2 penyebab di 2 router)
+Pemeriksaan `iptables -t nat -S` dan `iptables -t nat -L POSTROUTING -n -v` di **Misato** dan **Gendou** menemukan **2 penyebab**:
+
+| No | Router | Rule sabotase yang ditemukan | Dampak |
+|---|---|---|---|
+| 1 | **Misato** | `-A POSTROUTING -s 192.220.4.64/29 ! -d 192.220.0.0/16 -o eth0 -j SNAT --to-source 172.31.99.1` | Mengubah IP sumber paket internet dari Cage menjadi `172.31.99.1` (di luar prefix `192.220.0.0/16`), sehingga paket langsung di-`DROP` oleh chain `FORWARD` Gendou (yang hanya mengizinkan `-s 192.220.0.0/16`) dan tidak dikenali oleh rule NAT Gendou. |
+| 2 | **Gendou** | `-I POSTROUTING 1 -s 192.220.4.64/29 -o eth0 -j RETURN` | Ditempatkan di baris pertama **sebelum** `MASQUERADE`. Meskipun SNAT di Misato sudah dihapus, paket dari Cage langsung keluar dari chain `POSTROUTING` tanpa melalui `MASQUERADE`, sehingga keluar ke NAT1 memakai IP internal mentah (`192.220.4.66`) dan balasannya tidak pernah kembali. |
+
+### Penjelasan kenapa Cage terdampak, tetapi Intel dan ping Cage → Lilith tidak
+1. **Kenapa Switch-Intel (`Spy`, `192.220.4.102`, subnet `192.220.4.100/30`) tidak terdampak?**
+   - Jalur `Spy` melewati router **Kaji → Gendou**, tidak melewati **Misato**, sehingga tidak terkena SNAT `172.31.99.1`.
+   - Di Gendou, rule sabotase `-j RETURN` hanya mencocokkan `-s 192.220.4.64/29` (Switch-Cage), bukan `192.220.4.100/30` (Switch-Intel). Jadi trafik dari `Spy` tetap masuk ke rule `MASQUERADE` di bawahnya.
+2. **Kenapa ping dari Cage ke Lilith (`192.220.4.74`) tetap normal?**
+   - Rule SNAT di Misato memakai syarat `! -d 192.220.0.0/16`, sehingga trafik menuju alamat internal (`192.220.4.74`) tidak diterjemahkan.
+   - Di Gendou, paket menuju Lilith keluar melalui interface internal `eth7` (bukan `-o eth0`), sehingga tidak terkena rule `-j RETURN` maupun NAT.
+
+### Di router mana alamat sumber diterjemahkan?
+- **Saat sabotase:** alamat sumber trafik internet dari Cage diterjemahkan secara keliru di **Misato** (menjadi `172.31.99.1`), dan di **Gendou** justru dilewati (`RETURN`) sehingga tidak di-NAT.
+- **Setelah perbaikan (kondisi benar):** alamat sumber (`192.220.4.66`, dan seluruh prefix internal `192.220.0.0/16`) **hanya diterjemahkan di Gendou** melalui rule `POSTROUTING -s 192.220.0.0/16 -o eth0 -j MASQUERADE` saat paket keluar ke `eth0` (NAT1). Misato tidak melakukan NAT sama sekali.
+
+### Perbaikan
+Perbaikan dipisah menjadi dua script (tidak mengubah `misato.sh` dan `gendou.sh`):
+- [`scripts/misato_soal10_fix.sh`](scripts/misato_soal10_fix.sh): menghapus rule SNAT `172.31.99.1` di Misato.
+- [`scripts/gendou_soal10_fix.sh`](scripts/gendou_soal10_fix.sh): menghapus rule `RETURN` untuk `192.220.4.64/29` di Gendou dan memastikan rule `MASQUERADE` tetap aktif.
+
+### Bukti
+**A. Diagnosa tabel NAT di Misato dan Gendou (serta gejala di Unit-01 dan Spy)**
+![Diagnosa NAT Misato dan Gendou](assets/misi_soal10_diagnosa.png)
+<!-- TODO: screenshot iptables -t nat -S di Misato & Gendou, ping gagal Unit-01 -> 8.8.8.8, ping sukses Unit-01 -> Lilith & Spy -> 8.8.8.8 -->
+
+**B. Hasil perbaikan dan Unit-01 kembali bisa ping `8.8.8.8`**
+![Perbaikan NAT dan ping Unit-01](assets/misi_soal10_fix_unit01.png)
+<!-- TODO: screenshot misato_soal10_fix.sh, gendou_soal10_fix.sh, dan ping -c 3 8.8.8.8 dari Unit-01 -->
+
+---
+
+## Soal 11: Casper harus jadi hantu (Blokir Ping Masuk di Magi-Casper)
+
+**Deskripsi soal:** memblokir semua ping (ICMP `echo-request`) dari perangkat lain menuju `Magi-Casper` (`192.220.4.58`), termasuk dari perangkat yang berada di switch yang sama (`Magi-Balthasar`), sementara `Magi-Casper` sendiri tetap boleh mem-ping siapa saja dan layanan TCP `5000` tetap hidup. Bukti: ping ke Casper dari `Balthasar` dan `Lilith` gagal, sedangkan ping dari `Casper` ke keduanya berhasil.
+
+### Langkah pengerjaan
+1. **Penempatan firewall di host `Magi-Casper` sendiri** (bukan di router Fuyutsuki), karena `Magi-Balthasar` (`192.220.4.59`) dan `Magi-Melchior` (`192.220.4.60`) berada satu switch (`Switch-Terminal`) dan satu subnet (`192.220.4.56/29`) dengan Casper. Lalu lintas antar-node satu switch dikirim langsung di Layer 2 tanpa melewati router Fuyutsuki.
+2. Menambahkan aturan `iptables` pada chain `INPUT` di [`scripts/magi-casper.sh`](scripts/magi-casper.sh) (penambahan fitur keamanan di atas Soal 7):
+   ```bash
+   iptables -P INPUT ACCEPT
+   iptables -F INPUT
+   iptables -A INPUT -i lo -j ACCEPT
+   iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+   iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+   ```
+   - Ping **masuk** (`echo-request`, ICMP type 8) dari host lain (baik beda subnet seperti Lilith maupun satu switch seperti Balthasar) di-`DROP` diam-diam.
+   - Ping **keluar** dari Casper tetap melewati `OUTPUT` (`ACCEPT`), dan balasannya (`echo-reply`, ICMP type 0) masuk lewat `ESTABLISHED,RELATED` sehingga ping dari Casper ke siapa saja tetap berhasil.
+   - Layanan **TCP 5000** tidak terkena rule ICMP dan tetap diizinkan oleh policy `INPUT ACCEPT`.
+3. Menjalankan ulang `/root/magi-casper.sh` di `Magi-Casper`, lalu menguji ping dua arah antara Casper ↔ Balthasar dan Casper ↔ Lilith serta memastikan TCP `5000` tetap menerima pesan.
+
+### Bukti
+**A. Rule `iptables -S INPUT` di Magi-Casper dan ping keluar Casper ke Balthasar & Lilith (berhasil)**
+![Firewall dan ping keluar Casper](assets/misi_soal11_casper.png)
+<!-- TODO: screenshot iptables -S INPUT + ping ke 192.220.4.59 & 192.220.4.74 di Magi-Casper -->
+
+**B. Ping ke Casper dari Balthasar (`192.220.4.59`) dan Lilith (`192.220.4.74`) gagal, sementara TCP 5000 tetap hidup**
+![Ping gagal dari Balthasar dan Lilith](assets/misi_soal11_ping_gagal.png)
+<!-- TODO: screenshot ping gagal ke 192.220.4.58 dari Magi-Balthasar dan Lilith (+ tes nc TCP 5000) -->
+
+---
+
+## Soal 12: Teknisi yang kelewat semangat (Sabotase Hardening Firewall di Magi-Casper)
+
+**Deskripsi soal:** menjalankan script sabotase `break_fw.sh` di **Magi-Casper**, mendiagnosis semua penyebab kenapa Casper tidak bisa `ping 8.8.8.8`, tidak bisa `apt-get update`, dan `Unit-00` tidak bisa menyambung ke TCP `5000`, sementara ping ke Casper tetap ditolak. Lalu memperbaiki firewall **tanpa membatalkan tujuan hardening** (`policy INPUT` tetap `DROP` dan lalu lintas masuk yang tidak diizinkan tetap ditolak). Bukti: `nc` dari `Unit-00` ke Casper port `5000` berhasil dan `apt-get update` di Casper berhasil.
+
+### Hasil diagnosa di Magi-Casper (4 penyebab)
+Pemeriksaan `iptables -S` di `Magi-Casper` setelah `break_fw.sh` dijalankan menampilkan:
+```text
+-P INPUT DROP
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p icmp -j DROP
+-A OUTPUT -p udp -m udp --dport 53 -j DROP
+```
+
+Dari hasil tersebut ditemukan **4 penyebab**:
+
+| No | Penyebab | Dampak |
+|---|---|---|
+| 1 | **Tidak ada rule `ESTABLISHED,RELATED` di `INPUT`** (sementara policy `INPUT = DROP`) | Balasan koneksi yang dimulai oleh Casper (balasan HTTP/HTTPS `apt-get update`, balasan DNS, dan `echo-reply` ping `8.8.8.8`) langsung di-`DROP` di `INPUT`. |
+| 2 | **Rule `-A INPUT -p icmp -j DROP` memblokir seluruh ICMP**, bukan hanya `echo-request` | Paket `echo-reply` (ICMP type 0) saat Casper mem-ping `8.8.8.8` atau host lain ikut di-`DROP`. |
+| 3 | **Rule `-A OUTPUT -p udp --dport 53 -j DROP`** di `OUTPUT` | Query DNS keluar dari Casper diblokir sehingga `apt-get update` gagal me-resolve domain repository (`deb.debian.org`). |
+| 4 | **Tidak ada rule yang mengizinkan TCP `5000` di `INPUT`** | Koneksi masuk baru dari `Unit-00` (dan node lain) ke layanan MAGI Casper port `5000` langsung ditolak oleh policy `INPUT DROP`. |
+
+### Penjelasan kenapa gejalanya begitu
+- **Kenapa ping ke Casper tetap ditolak?** Karena `-A INPUT -p icmp -j DROP` dan policy `INPUT DROP` sama-sama menolak paket `echo-request` masuk.
+- **Kenapa Casper gagal `ping 8.8.8.8`?** Paket `echo-request` berhasil keluar (`OUTPUT ACCEPT`), tetapi `echo-reply` yang kembali ke Casper diblokir oleh `-A INPUT -p icmp -j DROP` dan ketiadaan rule `ESTABLISHED,RELATED`.
+- **Kenapa `apt-get update` gagal?** Terhalang dua lapis: query DNS UDP port 53 diblokir di `OUTPUT`, dan seandainya DNS lewat pun, balasan TCP dari server repository diblokir di `INPUT` karena tidak ada `ESTABLISHED,RELATED`.
+- **Kenapa `Unit-00` gagal `nc` ke TCP 5000?** Tidak ada rule `ACCEPT` untuk `--dport 5000` sehingga paket SYN terkena policy `INPUT DROP`.
+
+### Perbaikan (tetap mempertahankan hardening)
+Perbaikan ditulis di script terpisah [`scripts/magi-casper_soal12_fix.sh`](scripts/magi-casper_soal12_fix.sh) (tidak menimpa `magi-casper.sh`):
+- Menghapus rule sabotase `-A OUTPUT -p udp --dport 53 -j DROP` dan `-A INPUT -p icmp -j DROP`.
+- Mempertahankan policy **`INPUT DROP`** dan hanya mengizinkan 3 hal di `INPUT`:
+  1. `-A INPUT -i lo -j ACCEPT` (loopback),
+  2. `-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT` (balasan ping keluar, DNS, dan `apt-get update`),
+  3. `-A INPUT -p tcp --dport 5000 -j ACCEPT` (layanan TCP 5000).
+- Karena policy `INPUT` tetap `DROP`, semua lalu lintas masuk yang tidak diizinkan (termasuk ping `echo-request` dari luar dan port selain 5000) tetap ditolak (Soal 11 dan hardening tetap terjaga).
+
+### Bukti
+**A. Diagnosa `iptables -S` dan gejala gagal sebelum perbaikan**
+![Diagnosa firewall Casper](assets/misi_soal12_diagnosa.png)
+<!-- TODO: screenshot iptables -S, ping 8.8.8.8 gagal, apt-get update gagal di Casper, dan nc gagal dari Unit-00 -->
+
+**B. Hasil perbaikan (`iptables -S` dengan `-P INPUT DROP`), `apt-get update` + `ping 8.8.8.8` berhasil di Casper, dan `nc` port 5000 dari Unit-00 berhasil**
+![Perbaikan Casper dan uji Unit-00](assets/misi_soal12_fix.png)
+<!-- TODO: screenshot magi-casper_soal12_fix.sh, apt-get update & ping 8.8.8.8 di Casper, serta nc port 5000 dari Unit-00 + log Casper -->
+
+---
+
 ## Struktur repo
 | Path | Isi |
 |---|---|
